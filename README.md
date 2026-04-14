@@ -277,33 +277,6 @@ document.getElementById('btn-clear').addEventListener('click', () => {
 });
 ```
 
-### 使用 MapLibreDrawControl 控件
-
-```javascript
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import MapLibreDraw, { DrawMode, MapLibreDrawControl } from 'maplibre-draw-editor';
-
-// 初始化地图
-const map = new maplibregl.Map({
-  container: 'map',
-  style: 'https://demotiles.maplibre.org/style.json',
-  center: [116.397428, 39.90923],
-  zoom: 12
-});
-
-// 初始化绘制工具
-const draw = new MapLibreDraw({
-  map: map,
-  primaryColor: '#ffa600',
-  enableDeleteConfirmation: true
-});
-
-// 创建并添加绘制控件
-const drawControl = new MapLibreDrawControl(draw);
-map.addControl(drawControl, 'top-right');
-```
-
 ## 注意事项
 
 1. **地图加载**：确保在地图加载完成后初始化绘制工具，或使用地图的 `load` 事件回调初始化。
