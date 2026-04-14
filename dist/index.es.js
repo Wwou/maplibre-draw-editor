@@ -1,0 +1,804 @@
+import "maplibre-gl";
+//#region src/draw/MapLibreDraw.ts
+var e = "#ffa600", t = {
+	NONE: "none",
+	POINT: "point",
+	LINE: "line",
+	POLYGON: "polygon",
+	CIRCLE: "circle",
+	SELECT: "select"
+}, n = class {
+	map;
+	sourceId;
+	pointLayerId;
+	lineLayerId;
+	lineDashedLayerId;
+	polygonLayerId;
+	circleLayerId;
+	currentMode = t.NONE;
+	features = [];
+	currentFeature = null;
+	currentCoordinates = [];
+	isDrawing = !1;
+	selectedFeatureId = null;
+	selectedVertexIndex = null;
+	isDragging = !1;
+	dragStart = null;
+	dragStartPoint = null;
+	midpointInfo = null;
+	primaryColor;
+	enableDeleteConfirmation;
+	onFeatureSelect;
+	onDragStart;
+	onFeatureChange;
+	onDragEnd;
+	onVertexAdd;
+	onVertexRemove;
+	onDrawEnd;
+	onModeChange;
+	vertexSourceId;
+	vertexLayerId;
+	midpointSourceId;
+	midpointLayerId;
+	constructor(n) {
+		this.map = n.map, this.sourceId = n.sourceId || "draw-source", this.pointLayerId = n.pointLayerId || "draw-points", this.lineLayerId = n.lineLayerId || "draw-lines", this.lineDashedLayerId = n.lineDashedLayerId || "draw-lines-dashed", this.polygonLayerId = n.polygonLayerId || "draw-polygons", this.circleLayerId = n.circleLayerId || "draw-circle", this.vertexSourceId = "draw-vertices", this.vertexLayerId = "draw-vertex-points", this.midpointSourceId = "draw-midpoints", this.midpointLayerId = "draw-midpoint-points", this.primaryColor = n.primaryColor || e, this.enableDeleteConfirmation = n.enableDeleteConfirmation !== !1, this.onFeatureSelect = n.onFeatureSelect, this.onDragStart = n.onDragStart, this.onFeatureChange = n.onFeatureChange, this.onDragEnd = n.onDragEnd, this.onVertexAdd = n.onVertexAdd, this.onVertexRemove = n.onVertexRemove, this.onDrawEnd = n.onDrawEnd, this.onModeChange = n.onModeChange, this.currentMode = t.NONE, this.map ? this.init() : console.warn("Map instance is not loaded. Please initialize the map first.");
+	}
+	init() {
+		this.map.getSource(this.sourceId) || this.map.addSource(this.sourceId, {
+			type: "geojson",
+			data: {
+				type: "FeatureCollection",
+				features: []
+			}
+		}), this.map.getSource(this.vertexSourceId) || this.map.addSource(this.vertexSourceId, {
+			type: "geojson",
+			data: {
+				type: "FeatureCollection",
+				features: []
+			}
+		}), this.map.getSource(this.midpointSourceId) || this.map.addSource(this.midpointSourceId, {
+			type: "geojson",
+			data: {
+				type: "FeatureCollection",
+				features: []
+			}
+		}), this.addLayers(), this.setupEventListeners();
+	}
+	addLayers() {
+		this.map.getLayer(this.polygonLayerId) || (this.map.addLayer({
+			id: this.polygonLayerId,
+			type: "fill",
+			source: this.sourceId,
+			filter: [
+				"==",
+				"$type",
+				"Polygon"
+			],
+			paint: {
+				"fill-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"fill-opacity": [
+					"coalesce",
+					["get", "fillOpacity"],
+					.2
+				],
+				"fill-outline-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				]
+			}
+		}), this.map.addLayer({
+			id: this.polygonLayerId + "-outline",
+			type: "line",
+			source: this.sourceId,
+			filter: [
+				"all",
+				[
+					"==",
+					"$type",
+					"Polygon"
+				],
+				["has", "dashed"],
+				[
+					"==",
+					"dashed",
+					!1
+				]
+			],
+			paint: {
+				"line-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"line-width": [
+					"coalesce",
+					["get", "lineWidth"],
+					2
+				],
+				"line-opacity": [
+					"coalesce",
+					["get", "lineOpacity"],
+					1
+				],
+				"line-dasharray": [1, 0]
+			}
+		}), this.map.addLayer({
+			id: this.polygonLayerId + "-outline-dashed",
+			type: "line",
+			source: this.sourceId,
+			filter: [
+				"all",
+				[
+					"==",
+					"$type",
+					"Polygon"
+				],
+				["has", "dashed"],
+				[
+					"==",
+					"dashed",
+					!0
+				]
+			],
+			paint: {
+				"line-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"line-width": [
+					"coalesce",
+					["get", "lineWidth"],
+					2
+				],
+				"line-opacity": [
+					"coalesce",
+					["get", "lineOpacity"],
+					1
+				],
+				"line-dasharray": [2, 1]
+			}
+		})), this.map.getLayer(this.lineLayerId) || (this.map.addLayer({
+			id: this.lineLayerId,
+			type: "line",
+			source: this.sourceId,
+			filter: [
+				"all",
+				[
+					"==",
+					"$type",
+					"LineString"
+				],
+				["has", "dashed"],
+				[
+					"==",
+					"dashed",
+					!1
+				]
+			],
+			paint: {
+				"line-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"line-width": [
+					"coalesce",
+					["get", "lineWidth"],
+					2
+				],
+				"line-opacity": [
+					"coalesce",
+					["get", "lineOpacity"],
+					1
+				]
+			}
+		}), this.map.addLayer({
+			id: this.lineDashedLayerId,
+			type: "line",
+			source: this.sourceId,
+			filter: [
+				"all",
+				[
+					"==",
+					"$type",
+					"LineString"
+				],
+				["has", "dashed"],
+				[
+					"==",
+					"dashed",
+					!0
+				]
+			],
+			paint: {
+				"line-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"line-width": [
+					"coalesce",
+					["get", "lineWidth"],
+					2
+				],
+				"line-opacity": [
+					"coalesce",
+					["get", "lineOpacity"],
+					1
+				],
+				"line-dasharray": [2, 1]
+			}
+		})), this.map.getLayer(this.pointLayerId) || this.map.addLayer({
+			id: this.pointLayerId,
+			type: "circle",
+			source: this.sourceId,
+			filter: [
+				"all",
+				[
+					"==",
+					"$type",
+					"Point"
+				],
+				["!has", "radius"]
+			],
+			paint: {
+				"circle-radius": [
+					"coalesce",
+					["get", "circleRadius"],
+					6
+				],
+				"circle-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"circle-stroke-width": 2,
+				"circle-stroke-color": "#fff"
+			}
+		}), this.map.getLayer(this.circleLayerId) || this.map.addLayer({
+			id: this.circleLayerId,
+			type: "circle",
+			source: this.sourceId,
+			filter: [
+				"all",
+				[
+					"==",
+					"$type",
+					"Point"
+				],
+				["has", "radius"]
+			],
+			paint: {
+				"circle-radius": ["get", "radius"],
+				"circle-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"circle-opacity": [
+					"coalesce",
+					["get", "fillOpacity"],
+					.2
+				],
+				"circle-stroke-width": [
+					"coalesce",
+					["get", "lineWidth"],
+					2
+				],
+				"circle-stroke-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"circle-stroke-opacity": [
+					"coalesce",
+					["get", "lineOpacity"],
+					1
+				]
+			}
+		}), this.map.getLayer(this.vertexLayerId) || this.map.addLayer({
+			id: this.vertexLayerId,
+			type: "circle",
+			source: this.vertexSourceId,
+			paint: {
+				"circle-radius": 5,
+				"circle-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				],
+				"circle-stroke-width": 2,
+				"circle-stroke-color": "#fff"
+			}
+		}), this.map.getLayer(this.midpointLayerId) || this.map.addLayer({
+			id: this.midpointLayerId,
+			type: "circle",
+			source: this.midpointSourceId,
+			paint: {
+				"circle-radius": 2,
+				"circle-color": "#ffffff",
+				"circle-stroke-width": 2,
+				"circle-stroke-color": [
+					"coalesce",
+					["get", "primaryColor"],
+					this.primaryColor
+				]
+			}
+		});
+	}
+	setupEventListeners() {
+		this.map.on("click", (e) => {
+			let n = this.map.queryRenderedFeatures(e.point, { layers: [this.vertexLayerId] }), r = this.map.queryRenderedFeatures(e.point, { layers: [this.midpointLayerId] }), i = this.map.queryRenderedFeatures(e.point, { layers: [
+				this.pointLayerId,
+				this.lineLayerId,
+				this.lineDashedLayerId,
+				this.polygonLayerId,
+				this.circleLayerId
+			] }), a = this.currentMode === t.POINT || this.currentMode === t.LINE || this.currentMode === t.POLYGON || this.currentMode === t.CIRCLE;
+			if (r.length > 0 && this.selectedFeatureId) {
+				let e = parseInt(r[0].properties.segmentIndex), t = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+				if (t) {
+					let n = [0, 0];
+					if (t.geometry.type === "LineString") {
+						let r = t.geometry.coordinates[e], i = t.geometry.coordinates[e + 1];
+						n = this.calculateVisualMidpoint(r, i);
+					} else if (t.geometry.type === "Polygon") {
+						let r = t.geometry.coordinates[0].slice(0, -1), i = r[e], a = r[(e + 1) % r.length];
+						n = this.calculateVisualMidpoint(i, a);
+					}
+					this.insertVertex(e + 1, {
+						lng: n[0],
+						lat: n[1]
+					});
+				}
+			} else !a && !this.currentFeature && i.length > 0 ? (this.setMode(t.SELECT), this.selectFeature(e)) : this.currentMode === t.POINT ? this.addPoint(e.lngLat) : this.currentMode === t.LINE || this.currentMode === t.POLYGON || this.currentMode === t.CIRCLE ? this.addCoordinate(e.lngLat) : this.currentMode === t.SELECT && !n.length && !r.length && this.deselectFeature();
+		}), this.map.on("mousemove", (e) => {
+			if (this.isDrawing && (this.currentMode === t.LINE || this.currentMode === t.POLYGON || this.currentMode === t.CIRCLE)) this.updatePreview(e.lngLat), this.map.getCanvas().style.cursor = "crosshair";
+			else if (this.isDragging) this.handleDrag(e), this.map.getCanvas().style.cursor = "grabbing";
+			else {
+				let t = this.map.queryRenderedFeatures(e.point, { layers: [this.vertexLayerId] }), n = this.map.queryRenderedFeatures(e.point, { layers: [this.midpointLayerId] }), r = this.map.queryRenderedFeatures(e.point, { layers: [
+					this.pointLayerId,
+					this.lineLayerId,
+					this.lineDashedLayerId,
+					this.polygonLayerId,
+					this.circleLayerId
+				] });
+				t.length > 0 || n.length > 0 ? this.map.getCanvas().style.cursor = "pointer" : r.length > 0 ? this.map.getCanvas().style.cursor = "move" : this.map.getCanvas().style.cursor = "default";
+			}
+		}), this.map.on("mousedown", (e) => {
+			if (this.currentMode === t.SELECT) {
+				let t = this.map.queryRenderedFeatures(e.point, { layers: [
+					this.pointLayerId,
+					this.lineLayerId,
+					this.lineDashedLayerId,
+					this.polygonLayerId,
+					this.circleLayerId,
+					this.vertexLayerId,
+					this.midpointLayerId
+				] });
+				t.length > 0 && (t[0].properties.id === this.selectedFeatureId || t[0].properties.groupId === this.selectedFeatureId) ? this.startDrag(e) : this.isDragging = !1;
+			}
+		}), this.map.on("mouseup", () => {
+			if (this.isDragging) {
+				if (this.isDragging = !1, this.selectedFeatureId && this.onDragEnd) {
+					let e = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+					e && this.onDragEnd(e);
+				}
+				this.dragStart = null, this.dragStartPoint = null;
+			}
+		}), this.map.on("dblclick", (e) => {
+			this.isDrawing && (this.currentMode === t.LINE || this.currentMode === t.POLYGON) ? this.finishDrawing() : this.currentMode === t.SELECT && this.deleteVertex(e);
+		}), document.addEventListener("keydown", (e) => {
+			this.currentMode === t.SELECT && this.selectedFeatureId && (e.key === "Delete" || e.key === "Backspace" ? this.deleteFeature() : e.key === "Escape" && this.deselectFeature());
+		}), this.map.on("zoom", () => {
+			this.selectedFeatureId && this.updateVertices();
+		}), this.map.on("contextmenu", (e) => {
+			if (e.preventDefault(), !this.enableDeleteConfirmation) return;
+			let t = this.map.queryRenderedFeatures(e.point, { layers: [
+				this.pointLayerId,
+				this.lineLayerId,
+				this.lineDashedLayerId,
+				this.polygonLayerId,
+				this.circleLayerId
+			] });
+			if (t.length > 0) {
+				let n = t[0].properties.id;
+				this.createDeleteConfirmationButton(e.point, n);
+			}
+		});
+	}
+	addPoint(e) {
+		let n = [e.lng, e.lat];
+		if (this.setMode(t.SELECT), this.features.some((e) => {
+			if (e.geometry.type === "Point") {
+				let t = e.geometry.coordinates;
+				return t[0] === n[0] && t[1] === n[1];
+			}
+			return !1;
+		})) return;
+		let r = {
+			type: "Feature",
+			geometry: {
+				type: "Point",
+				coordinates: n
+			},
+			properties: {
+				id: Date.now().toString(),
+				...this.currentStyle
+			}
+		};
+		this.features.push(r), this.updateSource();
+	}
+	addCoordinate(e) {
+		let n = [e.lng, e.lat], r = this.currentCoordinates[this.currentCoordinates.length - 1];
+		if (!(r && r[0] === n[0] && r[1] === n[1])) {
+			if (this.currentCoordinates.push(n), !this.isDrawing) this.isDrawing = !0, this.createCurrentFeature();
+			else if (this.currentMode === t.CIRCLE) {
+				this.finishDrawing();
+				return;
+			}
+			this.updatePreview(e);
+		}
+	}
+	createCurrentFeature() {
+		this.currentMode === t.LINE ? this.currentFeature = {
+			type: "Feature",
+			geometry: {
+				type: "LineString",
+				coordinates: this.currentCoordinates
+			},
+			properties: {
+				id: Date.now().toString(),
+				...this.currentStyle
+			}
+		} : this.currentMode === t.POLYGON ? this.currentFeature = {
+			type: "Feature",
+			geometry: {
+				type: this.currentCoordinates.length > 1 ? "Polygon" : "LineString",
+				coordinates: [this.currentCoordinates]
+			},
+			properties: {
+				id: Date.now().toString(),
+				...this.currentStyle
+			}
+		} : this.currentMode === t.CIRCLE && (this.currentFeature = {
+			type: "Feature",
+			geometry: {
+				type: "Point",
+				coordinates: this.currentCoordinates[0]
+			},
+			properties: {
+				id: Date.now().toString(),
+				radius: 50,
+				...this.currentStyle
+			}
+		});
+	}
+	updatePreview(e) {
+		if (!this.currentFeature) return;
+		let n = [...this.currentCoordinates, [e.lng, e.lat]];
+		if (this.currentMode === t.LINE && this.currentFeature.geometry.type === "LineString") this.currentFeature.geometry.coordinates = n;
+		else if (this.currentMode === t.POLYGON) this.currentFeature.geometry.type = n.length > 2 ? "Polygon" : "LineString", this.currentFeature.geometry.coordinates = n.length > 2 ? [n] : n;
+		else if (this.currentMode === t.CIRCLE) {
+			let t = this.map.project([this.currentCoordinates[0][0], this.currentCoordinates[0][1]]), n = this.map.project([e.lng, e.lat]), r = Math.sqrt((n.x - t.x) ** 2 + (n.y - t.y) ** 2);
+			this.currentFeature.properties.radius = r;
+		}
+		this.onFeatureChange && this.onFeatureChange(this.currentFeature), this.updateSource();
+	}
+	finishDrawing() {
+		if (this.currentFeature) {
+			if (this.currentMode === t.POLYGON && this.currentFeature.geometry.type === "Polygon" && this.currentCoordinates.length > 2) {
+				let e = [...this.currentCoordinates, [...this.currentCoordinates[0]]];
+				this.currentFeature.geometry.coordinates = [e];
+			}
+			(this.currentCoordinates.length > 1 || this.currentMode === t.POINT || this.currentMode === t.CIRCLE) && (this.features.push(this.currentFeature), this.onDrawEnd && this.onDrawEnd(this.currentFeature)), this.resetDrawing(), this.setMode(t.SELECT);
+		}
+	}
+	resetDrawing() {
+		this.isDrawing = !1, this.currentFeature = null, this.currentCoordinates = [], this.updateSource();
+	}
+	updateSource() {
+		let e = this.map.getSource(this.sourceId);
+		e && e.setData({
+			type: "FeatureCollection",
+			features: [...this.features, ...this.currentFeature ? [this.currentFeature] : []]
+		});
+	}
+	getMode() {
+		return this.currentMode;
+	}
+	getFeatures() {
+		return this.features;
+	}
+	clear() {
+		console.log(this.currentMode), this.features = [], this.resetDrawing(), this.deselectFeature(), this.updateSource(), console.log(this.currentMode);
+	}
+	removeFeatureById(e) {
+		let t = this.features.findIndex((t) => t.properties.id === e);
+		return t === -1 ? !1 : (this.selectedFeatureId === e && this.deselectFeature(), this.features.splice(t, 1), this.updateSource(), !0);
+	}
+	selectFeatureById(e) {
+		let n = this.features.find((t) => t.properties.id === e);
+		return n ? (this.setMode(t.SELECT), this.selectedFeatureId = e, this.updateVertices(), this.onFeatureSelect && this.onFeatureSelect(n), !0) : !1;
+	}
+	addFeature(e, t) {
+		let n = Date.now().toString() + Math.floor(Math.random() * 1e3).toString();
+		return e.properties ||= {}, e.properties.id = e.properties.id || n, t && Object.assign(e.properties, t), this.features.push(e), this.updateSource(), e;
+	}
+	createDeleteConfirmationButton(e, t) {
+		this.removeDeleteConfirmationButton();
+		let n = document.createElement("div");
+		n.id = "draw-delete-confirm", n.style.position = "absolute", n.style.left = `${e.x + 10}px`, n.style.top = `${e.y + 10}px`, n.style.background = "#fff", n.style.border = "1px solid #ccc", n.style.borderRadius = "4px", n.style.padding = "2px 8px", n.style.cursor = "pointer", n.style.boxShadow = "0 2px 4px rgba(0,0,0,0.1)", n.style.zIndex = "1000", n.style.display = "flex", n.style.alignItems = "center", n.innerHTML = "<span style=\"font-size: 16px;color:red;\">x</span>", n.addEventListener("click", () => {
+			this.removeFeatureById(t), this.removeDeleteConfirmationButton();
+		}), this.map.getContainer().appendChild(n);
+		let r = () => {
+			this.removeDeleteConfirmationButton(), document.removeEventListener("click", r);
+		};
+		setTimeout(() => {
+			document.addEventListener("click", r);
+		}, 100);
+	}
+	removeDeleteConfirmationButton() {
+		let e = document.getElementById("draw-delete-confirm");
+		e && e.remove();
+	}
+	selectFeature(e) {
+		let t = this.map.queryRenderedFeatures(e.point, { layers: [
+			this.pointLayerId,
+			this.lineLayerId,
+			this.lineDashedLayerId,
+			this.polygonLayerId,
+			this.circleLayerId
+		] });
+		if (t.length > 0) {
+			let e = t[0];
+			this.selectedFeatureId = e.properties.id, this.updateVertices(), this.onFeatureSelect && this.onFeatureSelect(e);
+		} else this.deselectFeature();
+	}
+	startDrag(e) {
+		let t = this.map.queryRenderedFeatures(e.point, { layers: [this.vertexLayerId] });
+		if (t.length > 0) {
+			if (e.preventDefault(), this.isDragging = !0, this.dragStart = [e.lngLat.lng, e.lngLat.lat], this.dragStartPoint = [e.point.x, e.point.y], this.selectedVertexIndex = parseInt(t[0].properties.index), this.selectedFeatureId && this.onDragStart) {
+				let e = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+				e && this.onDragStart(e);
+			}
+		} else {
+			let t = this.map.queryRenderedFeatures(e.point, { layers: [this.midpointLayerId] });
+			if (t.length > 0 && this.selectedFeatureId) {
+				e.preventDefault();
+				let n = parseInt(t[0].properties.segmentIndex), r = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+				if (r) {
+					let t = [0, 0];
+					if (r.geometry.type === "LineString") {
+						let e = r.geometry.coordinates[n], i = r.geometry.coordinates[n + 1];
+						t = this.calculateVisualMidpoint(e, i);
+					} else if (r.geometry.type === "Polygon") {
+						let e = r.geometry.coordinates[0].slice(0, -1), i = e[n], a = e[(n + 1) % e.length];
+						t = this.calculateVisualMidpoint(i, a);
+					}
+					this.isDragging = !0, this.dragStart = [e.lngLat.lng, e.lngLat.lat], this.dragStartPoint = [e.point.x, e.point.y], this.selectedVertexIndex = null, this.midpointInfo = {
+						segmentIndex: n,
+						midpointCoord: t
+					}, this.onDragStart && this.onDragStart(r);
+				}
+			} else if (this.map.queryRenderedFeatures(e.point, { layers: [
+				this.pointLayerId,
+				this.lineLayerId,
+				this.lineDashedLayerId,
+				this.polygonLayerId,
+				this.circleLayerId
+			] }).length > 0 && (e.preventDefault(), this.isDragging = !0, this.dragStart = [e.lngLat.lng, e.lngLat.lat], this.dragStartPoint = [e.point.x, e.point.y], this.selectedVertexIndex = null, this.selectedFeatureId && this.onDragStart)) {
+				let e = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+				e && this.onDragStart(e);
+			}
+		}
+	}
+	handleDrag(e) {
+		if (!this.dragStart || !this.dragStartPoint || !this.selectedFeatureId) return;
+		if (e.preventDefault(), this.midpointInfo && this.selectedVertexIndex === null) {
+			let { segmentIndex: t, midpointCoord: n } = this.midpointInfo;
+			this.insertVertex(t + 1, {
+				lng: n[0],
+				lat: n[1]
+			}), this.selectedVertexIndex = t + 1, this.midpointInfo = null, this.dragStart = [e.lngLat.lng, e.lngLat.lat], this.dragStartPoint = [e.point.x, e.point.y];
+			return;
+		}
+		let t = e.point.x - this.dragStartPoint[0], n = e.point.y - this.dragStartPoint[1], r = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+		if (r) {
+			if (this.selectedVertexIndex !== null) {
+				if (r.geometry.type === "LineString") {
+					let e = r.geometry.coordinates[this.selectedVertexIndex], i = this.map.project(e), a = [i.x + t, i.y + n], o = this.map.unproject(a);
+					r.geometry.coordinates[this.selectedVertexIndex] = [o.lng, o.lat];
+				} else if (r.geometry.type === "Polygon") {
+					let e = r.geometry.coordinates[0][this.selectedVertexIndex], i = this.map.project(e), a = [i.x + t, i.y + n], o = this.map.unproject(a);
+					r.geometry.coordinates[0][this.selectedVertexIndex] = [o.lng, o.lat], this.selectedVertexIndex === 0 && (r.geometry.coordinates[0][r.geometry.coordinates[0].length - 1] = [...r.geometry.coordinates[0][0]]);
+				} else if (r.geometry.type === "Point" && r.properties.radius) {
+					if (this.selectedVertexIndex === 0) {
+						let e = r.geometry.coordinates, i = this.map.project(e), a = [i.x + t, i.y + n], o = this.map.unproject(a);
+						r.geometry.coordinates = [o.lng, o.lat];
+					} else if (this.selectedVertexIndex === 1) {
+						let t = r.geometry.coordinates, n = this.map.project(t), i = [e.point.x, e.point.y], a = Math.sqrt((i[0] - n.x) ** 2 + (i[1] - n.y) ** 2);
+						r.properties.radius = a;
+					}
+				}
+			} else if (r.geometry.type === "Point") if (r.properties.radius) {
+				let e = r.geometry.coordinates, i = this.map.project(e), a = [i.x + t, i.y + n], o = this.map.unproject(a);
+				r.geometry.coordinates = [o.lng, o.lat];
+			} else {
+				let e = r.geometry.coordinates, i = this.map.project(e), a = [i.x + t, i.y + n], o = this.map.unproject(a);
+				r.geometry.coordinates = [o.lng, o.lat];
+			}
+			else if (r.geometry.type === "LineString") r.geometry.coordinates.forEach((e) => {
+				let r = this.map.project(e), i = [r.x + t, r.y + n], a = this.map.unproject(i);
+				e[0] = a.lng, e[1] = a.lat;
+			});
+			else if (r.geometry.type === "Polygon") {
+				let e = r.geometry.coordinates[0];
+				for (let r = 0; r < e.length - 1; r++) {
+					let i = this.map.project(e[r]), a = [i.x + t, i.y + n], o = this.map.unproject(a);
+					e[r] = [o.lng, o.lat];
+				}
+				e.length > 0 && (e[e.length - 1] = [...e[0]]);
+			}
+			if (this.updateSource(), this.updateVertices(), this.selectedFeatureId && this.onFeatureChange) {
+				let e = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+				e && this.onFeatureChange(e);
+			}
+			this.dragStart = [e.lngLat.lng, e.lngLat.lat], this.dragStartPoint = [e.point.x, e.point.y];
+		}
+	}
+	deleteVertex(e) {
+		let t = this.map.queryRenderedFeatures(e.point, { layers: [this.vertexLayerId] });
+		if (t.length > 0 && this.selectedFeatureId) {
+			let e = parseInt(t[0].properties.index), n = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+			n && (n.geometry.type === "LineString" && n.geometry.coordinates.length > 2 ? (n.geometry.coordinates.splice(e, 1), this.onVertexRemove && this.onVertexRemove(n)) : n.geometry.type === "Polygon" && n.geometry.coordinates[0].length > 4 && (n.geometry.coordinates[0].splice(e, 1), this.onVertexRemove && this.onVertexRemove(n)), this.updateSource(), this.updateVertices());
+		}
+	}
+	deleteFeature() {
+		this.selectedFeatureId && (this.features = this.features.filter((e) => e.properties.id !== this.selectedFeatureId), this.deselectFeature(), this.updateSource());
+	}
+	deselectFeature() {
+		this.selectedFeatureId = null, this.selectedVertexIndex = null, this.updateVertices();
+	}
+	updateVertices() {
+		let e = [], t = [];
+		if (this.selectedFeatureId) {
+			let n = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+			if (n) {
+				let r = {
+					primaryColor: n.properties.primaryColor,
+					lineWidth: n.properties.lineWidth,
+					lineOpacity: n.properties.lineOpacity,
+					fillOpacity: n.properties.fillOpacity,
+					circleRadius: n.properties.circleRadius,
+					dashed: n.properties.dashed
+				};
+				if (n.geometry.type === "LineString") n.geometry.coordinates.forEach((i, a) => {
+					if (e.push({
+						type: "Feature",
+						geometry: {
+							type: "Point",
+							coordinates: i
+						},
+						properties: Object.assign({
+							index: a,
+							groupId: this.selectedFeatureId
+						}, r)
+					}), a < n.geometry.coordinates.length - 1) {
+						let e = n.geometry.coordinates[a + 1], o = this.calculateVisualMidpoint(i, e);
+						t.push({
+							type: "Feature",
+							geometry: {
+								type: "Point",
+								coordinates: o
+							},
+							properties: Object.assign({
+								segmentIndex: a,
+								groupId: this.selectedFeatureId
+							}, r)
+						});
+					}
+				});
+				else if (n.geometry.type === "Polygon") {
+					let i = n.geometry.coordinates[0].slice(0, -1);
+					i.forEach((n, a) => {
+						e.push({
+							type: "Feature",
+							geometry: {
+								type: "Point",
+								coordinates: n
+							},
+							properties: Object.assign({
+								index: a,
+								groupId: this.selectedFeatureId
+							}, r)
+						});
+						let o = i[(a + 1) % i.length], s = this.calculateVisualMidpoint(n, o);
+						t.push({
+							type: "Feature",
+							geometry: {
+								type: "Point",
+								coordinates: s
+							},
+							properties: Object.assign({
+								segmentIndex: a,
+								groupId: this.selectedFeatureId
+							}, r)
+						});
+					});
+				} else if (n.geometry.type === "Point" && n.properties.radius) {
+					let t = n.geometry.coordinates;
+					e.push({
+						type: "Feature",
+						geometry: {
+							type: "Point",
+							coordinates: t
+						},
+						properties: Object.assign({
+							index: 0,
+							groupId: this.selectedFeatureId
+						}, r)
+					});
+					let i = n.properties.radius, a = this.map.project(t), o = this.map.unproject([a.x + i, a.y]);
+					e.push({
+						type: "Feature",
+						geometry: {
+							type: "Point",
+							coordinates: [o.lng, o.lat]
+						},
+						properties: Object.assign({
+							index: 1,
+							groupId: this.selectedFeatureId
+						}, r)
+					});
+				}
+			}
+		}
+		let n = this.map.getSource(this.vertexSourceId);
+		n && n.setData({
+			type: "FeatureCollection",
+			features: e
+		});
+		let r = this.map.getSource(this.midpointSourceId);
+		r && r.setData({
+			type: "FeatureCollection",
+			features: t
+		});
+	}
+	calculateVisualMidpoint(e, t) {
+		try {
+			let n = this.map.project({
+				lng: e[0],
+				lat: e[1]
+			}), r = this.map.project({
+				lng: t[0],
+				lat: t[1]
+			}), i = {
+				x: (n.x + r.x) / 2,
+				y: (n.y + r.y) / 2
+			}, a = this.map.unproject(i);
+			return [a.lng, a.lat];
+		} catch {
+			return [(e[0] + t[0]) / 2, (e[1] + t[1]) / 2];
+		}
+	}
+	insertVertex(e, t) {
+		if (!this.selectedFeatureId) return;
+		let n = this.features.find((e) => e.properties.id === this.selectedFeatureId);
+		if (!n) return;
+		let r = [t.lng, t.lat];
+		n.geometry.type === "LineString" ? n.geometry.coordinates.splice(e, 0, r) : n.geometry.type === "Polygon" && (n.geometry.coordinates[0].splice(e, 0, r), n.geometry.coordinates[0].length > 0 && (n.geometry.coordinates[0][n.geometry.coordinates[0].length - 1] = [...n.geometry.coordinates[0][0]])), this.updateSource(), this.updateVertices(), this.onVertexAdd && this.onVertexAdd(n);
+	}
+	currentStyle = { dashed: !0 };
+	setMode(e, n) {
+		this.currentMode = e, n && (this.currentStyle = n, this.currentStyle.dashed = !!n.dashed), e === t.NONE ? (this.resetDrawing(), this.deselectFeature()) : e !== t.SELECT && this.deselectFeature(), this.onModeChange && this.onModeChange(e);
+	}
+};
+//#endregion
+export { t as DrawMode, n as default };
